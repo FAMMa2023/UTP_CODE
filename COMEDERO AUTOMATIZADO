@@ -1,0 +1,333 @@
+*COMEDERO Y BEBEDERO AUTOMATIZADO PARA GRANAJAS ALEJADAS 
+DE LA CIUDAD, ALIMENTADO CON ENERGÍA SOLAR*/
+
+//PRIMERO, CONFIGURAMOS LAS LIBRERÍAS
+#include <LiquidCrystal_I2C.h>    
+#include <Keypad.h>
+#include <Servo.h>
+//_______________LCD________________________________
+LiquidCrystal_I2C lcd(0x27, 16, 2); //Utilizaremos puerto I2C,es necesario la ruta exadecimal x27
+
+//________KEYPAD______________________________________
+
+const byte FILAS = 4;
+const byte COLUMNAS = 4;
+char keys[FILAS][COLUMNAS] ={
+  {'1','2','3','A'},
+  {'4','5','6','B'},
+  {'7','8','9','C'},
+  {'*','0','#','D'}
+};
+byte pinesFilas[FILAS] = {13,12,11,10};
+byte pinesColumnas[COLUMNAS] = {9,8,7,6};
+Keypad teclado = Keypad(makeKeymap(keys), pinesFilas, pinesColumnas, FILAS, COLUMNAS);
+
+//________SERVO_______________________________________
+//en este apartado declaramos los pines de los servos, los pulsos ,etc
+Servo servo1;
+Servo servo2;
+int PINSERVO1 = 4;
+int PINSERVO2 = 3;
+int PULSOMIN = 500;       	//Microsegundos
+int PULSOMAX = 2500;
+
+// declaramos variables y funciones globales
+char key;
+int LED = 5;
+
+  enum MenuState { MENU_PRINCIPAL, CONFIG_SERVO1, CONFIG_SERVO2, CONFIG_TANK, EJECUTAR };
+  
+// esta variable nos permitirá que al momento de activar el void loop su valor inicial en el switch sea tal cual
+  MenuState estadoMenu = MENU_PRINCIPAL;
+
+  int obtenerValorNumerico();
+  
+  int tiempoEncendido1 = 0;
+  int intervaloEncendido1 = 0;
+  int tiempoEncendido2 = 0;
+  int intervaloEncendido2 = 0;
+  int tiempoEncendidoT = 0;
+  int intervaloEncendidoT = 0;
+
+/*Dotamos de valores boleanos de tal manera que al activar sentencias estas,
+cumplan la función en los switchs*/
+  bool ejecutarServo1 = false;
+  bool ejecutarServo2 = false;
+  bool ejecutarTank = false;
+
+
+//_____________________________________________________
+void setup() {
+  lcd.init(); //impoprtante definir el inicio del lcd de sus respectiva librería
+  lcd.backlight();
+  
+  servo1.attach(PINSERVO1, PULSOMIN, PULSOMAX);
+  servo2.attach(PINSERVO2, PULSOMIN, PULSOMAX);
+  //Dejamos los servos en sus pociciones iniciales osea 0 grados
+  servo1.write(0);
+  servo2.write(0);
+ /* Seleccionamos el pin led, que servirá como para activar el relee
+ del la valvula de agua, debido a que su consumo es elevadop a comparación 
+ de los servomotores*/
+  pinMode(LED, OUTPUT);
+  /*Aquí activamos la función saludo, la cual está estructurada al final 
+  del código*/
+  saludo();
+}
+//_____________sección de loop____________________________________________
+void loop() {
+ /*Consistirá en utilizar una función Switch en el cual tenemos 
+   varoios casos para ejectura nuestro código*/
+ switch (estadoMenu){
+   
+    case MENU_PRINCIPAL:
+      mostrarMenuPrincipal();
+      break;
+   
+    case CONFIG_SERVO1:
+      configurarServo1();
+      break;
+   
+    case CONFIG_SERVO2:
+      configurarServo2();
+      break;
+   
+    case CONFIG_TANK:
+      configurarTank();
+      break;
+   
+    case EJECUTAR:
+      ejecutarServo1 = true; // estos se volverán verdaderos cuando se presione la tecla *
+      ejecutarServo2 = true; // en el KEYPAD
+      ejecutarTank = true;
+   
+      break;
+   
+    
+  }
+  // ESTA PARTE ES IMPORTANTE YA QUE MANTIENE A LOS SERVOS Y VALVULA(LED) FUNCIONANDO
+  // DE MANERA INTERMITENTE
+  
+   actualizarServo1();
+   actualizarServo2();
+   actualizarTank();
+  
+   
+  
+}
+
+//-------------------MENU_1---------------------------------------------
+/*este apartado es para visualizar el menú principal y así mediante
+sentencias seleccionar fisicamente qué queremos configurar*/ 
+void mostrarMenuPrincipal() 
+{
+  key = '\0'; // Reiniciar el valor de key
+  
+  lcd.setCursor(0, 0);			//Col, Fila
+  lcd.print("Silo1>1");
+  lcd.setCursor(0, 1);
+  lcd.print("Silo2>2");
+  lcd.setCursor(9, 0);
+  lcd.print("Tank>3");
+  lcd.setCursor(9, 1);
+  lcd.print("Go  >*");
+  
+  key = teclado.getKey();
+  if (key == '1') {				//EJECUTA PARA CONFIGURAR EL SERVO 1
+    estadoMenu = CONFIG_SERVO1; 
+  } else if (key == '2') {		//EJECUTA PARA CONFIGURAR EL SERVO 2
+    estadoMenu = CONFIG_SERVO2;
+  } else if (key == '3') {    	//EJECUTTA PARA CIONFIGURAR EL TANQUE(LED)
+    estadoMenu = CONFIG_TANK;
+  } else if (key == '*') {		// EJECUTA LO CONFIGURADO CON LOS DATOS GUARDADOS
+    estadoMenu = EJECUTAR;
+  }
+}
+//---------------------------------------------------------------------
+/*Este apartado es para configurar y mostrar en EL LCD Y 
+KEYPAD el servomotor 1 que será como la valvulka de salida del silo 1*/
+void configurarServo1() {
+  
+  lcd.clear();
+  lcd.setCursor(0, 1);
+  lcd.print("Set>#");
+  lcd.setCursor(8, 1);
+  lcd.print("Clear>C");
+  // Leer el tiempo de encendido desde el Keypad
+  lcd.setCursor(0, 0);
+  lcd.print("TIEMPO(s):"); // se escoge el intervalo
+  tiempoEncendido1 = obtenerValorNumerico();
+ 
+
+  // Leer el intervalo de encendido desde el Keypad
+  lcd.clear();
+  lcd.setCursor(0, 1);
+  lcd.print("Set>#");
+  lcd.setCursor(8, 1);
+  lcd.print("Clear>C");
+  lcd.setCursor(0, 0);
+  lcd.print("INTERVALO(s):"); // se escoge el tiempo
+  intervaloEncendido1 = obtenerValorNumerico();
+  lcd.clear();
+  // luego de ejecutar lo anterior volveremos al menú principal para proceder con los siguiente
+  estadoMenu = MENU_PRINCIPAL;   
+}
+//-------------------------------------------------------------------
+/*de igual manera que en el servo 1 pero para el silo 2*/
+void configurarServo2() {
+  lcd.clear();
+  lcd.setCursor(0, 1);
+  lcd.print("Set>#");
+  lcd.setCursor(8, 1);
+  lcd.print("Clear>C");
+  // Leer el tiempo de encendido desde el Keypad
+  lcd.setCursor(0, 0);
+  lcd.print("TIEMPO(s):");
+  tiempoEncendido2 = obtenerValorNumerico();
+
+  // Leer el intervalo de encendido desde el Keypad
+  lcd.clear();
+  lcd.setCursor(0, 1);
+  lcd.print("Set>#");
+  lcd.setCursor(8, 1);
+  lcd.print("Clear>C");
+  lcd.setCursor(0, 0);
+  lcd.print("INTERVALO(s):");
+  intervaloEncendido2 = obtenerValorNumerico();
+  
+  lcd.clear();
+  
+  estadoMenu = MENU_PRINCIPAL;
+   
+}
+//-------------------------------------------------------------------
+/*Aquí configuramos el tanque trantando de que sea de una manera 
+más parecida*/
+void configurarTank() {
+  lcd.clear();
+  lcd.setCursor(0, 1);
+  lcd.print("Set>#");
+  lcd.setCursor(8, 1);
+  lcd.print("Clear>C");
+  // Leer el tiempo de encendido desde el Keypad
+  lcd.setCursor(0, 0);
+  lcd.print("TIEMPO(s):");
+  tiempoEncendidoT = obtenerValorNumerico();
+
+  // Leer el intervalo de encendido desde el Keypad
+  lcd.clear();
+  lcd.setCursor(0, 1);
+  lcd.print("Set>#");
+  lcd.setCursor(8, 1);
+  lcd.print("Clear>C");
+  lcd.setCursor(0, 0);
+  lcd.print("INTERVALO(s):");
+  intervaloEncendidoT = obtenerValorNumerico();
+  
+  lcd.clear();
+  
+  estadoMenu = MENU_PRINCIPAL;
+  
+  
+ 
+}
+//------------------------------------------------------------------
+/*estre comando es para obtener y guardar los números, es muy importante,
+ya que es una de las bases del código*/
+int obtenerValorNumerico() {
+  String valorNumerico = "";
+  while (true) {
+    key = teclado.getKey();
+    if (key)   
+    { 
+      lcd.setCursor(13, 0);
+      lcd.print(key);
+      valorNumerico += key;
+      if(key == 'C')
+      {
+        valorNumerico = "";
+        
+        lcd.setCursor(13, 0);
+        lcd.print(" ");
+        
+        
+      }
+    }
+    if (key == '#') {
+      return valorNumerico.toInt();
+    }
+  }
+}
+
+
+//----------------------------------------------------------------
+/*Aquí los datos obtenidos en el apartado anterior se guardadan para ejecutar
+cuando los valores booleanos sean verdaderos con la función switch*/
+void encenderServo1(int tiempoEncendido1,int intervaloEncendido1)
+{
+  servo1.write(90);
+  delay(tiempoEncendido1 * 1000);
+  
+  servo1.write(0);
+  delay(intervaloEncendido1* 1000); 
+
+}
+//----------------------------------------------------------------
+/*Aquí los datos obtenidos en el apartado anterior se guardadan para ejecutar
+cuando los valores booleanos sean verdaderos con la función switch*/
+void encenderServo2(int tiempoEncendido2,int intervaloEncendido2)
+{ 
+  servo2.write(90);
+  delay(tiempoEncendido2 * 1000);
+
+  servo2.write(0);
+  delay(intervaloEncendido2 * 1000);
+}
+
+//--------------------------------------------------------------------
+/*Aquí los datos obtenidos en el apartado anterior se guardadan para ejecutar
+cuando los valores booleanos sean verdaderos con la función switch*/
+void actualizarServo1() {
+  
+  if (ejecutarServo1) {
+    encenderServo1(tiempoEncendido1, intervaloEncendido1);
+    
+  }
+  
+}
+//--------------------------------------------------------------------
+/*Aquí los datos obtenidos en el apartado anterior se guardadan para ejecutar
+cuando los valores booleanos sean verdaderos con la función switch*/
+void actualizarServo2() {
+  
+  if (ejecutarServo2) {
+    encenderServo2(tiempoEncendido2, intervaloEncendido2);
+    
+  }
+  
+}
+//--------------------------------------------------------------------
+
+void actualizarTank(){
+  
+  if (ejecutarTank) {
+   
+    digitalWrite(LED,HIGH);//enciendo LED
+    delay(tiempoEncendidoT * 1000);
+    digitalWrite(LED,LOW);
+    delay(intervaloEncendidoT * 1000);
+  }
+}
+//--------------------SALUDO-------------------------------------------
+/*Como mencioné anterior mente, este apartado inicia al programa 
+dando la bienvenida al usuario en la interface*/
+void saludo(){
+  lcd.clear();				  // Limpia LCD
+  lcd.setCursor(3,0);		  // Posición Columna 3, Fila 0 
+  lcd.print("BIENVENIDO");
+  lcd.setCursor(2,1);
+  lcd.print("AL  PROGRAMA");
+  delay(2000);                // Espera 4 segundos mostrando la presentación
+  lcd.clear();
+}
+
